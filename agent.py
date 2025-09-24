@@ -3,7 +3,7 @@ from livekit import agents
 from livekit.agents import AgentSession, Agent, RoomInputOptions
 from livekit.plugins import noise_cancellation, google
 from prompts import AGENT_INSTRUCTION, SESSION_INSTRUCTION, INTRODUCTION_PROMPT
-from tools import search_web, get_current_datetime
+from tools import search_web, get_current_datetime, get_weather
 import asyncio
 
 load_dotenv()
@@ -18,7 +18,7 @@ class Assistant(Agent):
                 voice="Charon",  # ✅ Hindi-friendly voice
                 temperature=0.8,
             ),
-            tools=[search_web, get_current_datetime],
+            tools=[search_web, get_current_datetime, get_weather],
         )
 
 
