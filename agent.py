@@ -15,6 +15,7 @@ from system_control import system_control
 from get_spotify import spotify_control
 from get_news import fetch_news
 from youtube_music_control import youtube_music_control
+from get_open_app import open_app, assistant_command_listener
 
 load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -38,6 +39,8 @@ class Assistant(Agent):
                 spotify_control,
                 fetch_news,
                 youtube_music_control,
+                open_app,
+                assistant_command_listener,
             ],
             chat_ctx=chat_ctx,
         )
