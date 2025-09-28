@@ -1,4 +1,4 @@
-# RamLal-X
+# Ram-X
 
 
 [![Python](https://img.shields.io/badge/Python-3.13+-blue?logo=python&logoColor=white)](https://www.python.org/) 

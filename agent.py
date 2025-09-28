@@ -11,7 +11,8 @@ from get_web_search import web_search
 from prompts import SESSION_INSTRUCTION, AGENT_INSTRUCTION
 from system_control import system_control
 from get_spotify import spotify_control
-from get_news import fetch_news  # Make sure fetch_news is a function_tool in get_news.py
+from get_news import fetch_news  
+from youtube_music_control import youtube_music_control
 
 # Load environment variables
 load_dotenv()
@@ -36,7 +37,8 @@ class Assistant(Agent):
                 get_current_date_time,
                 system_control,
                 spotify_control,
-                fetch_news  # Added news tool
+                fetch_news,
+                youtube_music_control
             ],
         )
 
