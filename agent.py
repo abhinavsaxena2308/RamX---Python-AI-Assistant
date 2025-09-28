@@ -1,30 +1,43 @@
 from dotenv import load_dotenv
 from livekit import agents
 from livekit.agents import AgentSession, Agent, RoomInputOptions
-from livekit.plugins import (
-    google,
-    noise_cancellation,
-)
+from livekit.plugins import google, noise_cancellation
 import os
-from tools import get_current_weather, web_search, get_current_date_time
-from prompts import SESSION_INSTRUCTION, AGENT_INSTRUCTION
-from system_control import system_controls
 
+# Import your custom tools
+from get_weather import get_current_weather
+from get_current_time_date import get_current_date_time
+from get_web_search import web_search
+from prompts import SESSION_INSTRUCTION, AGENT_INSTRUCTION
+from system_control import system_control
+from get_spotify import spotify_control
+from get_news import fetch_news  # Make sure fetch_news is a function_tool in get_news.py
+
+# Load environment variables
 load_dotenv()
 
-api_key = os.getenv("LIVEKIT_API_KEY")
-api_secret = os.getenv("LIVEKIT_API_SECRET")
-google_api_key = os.getenv("GOOGLE_API_KEY")
+API_KEY = os.getenv("LIVEKIT_API_KEY")
+API_SECRET = os.getenv("LIVEKIT_API_SECRET")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 class Assistant(Agent):
     def __init__(self) -> None:
-        super().__init__(instructions=AGENT_INSTRUCTION,
+        super().__init__(
+            instructions=AGENT_INSTRUCTION,
             llm=google.beta.realtime.RealtimeModel(
-                api_key= google_api_key,
+                api_key=GOOGLE_API_KEY,
                 model="gemini-2.0-flash-exp",
-                voice="Aoede",  # Hindi-friendly voice
-                temperature=0.8,),
-            tools=[get_current_weather, web_search, get_current_date_time, system_controls],
+                voice="Charon", 
+                temperature=0.8,
+            ),
+            tools=[
+                get_current_weather,
+                web_search,
+                get_current_date_time,
+                system_control,
+                spotify_control,
+                fetch_news  # Added news tool
+            ],
         )
 
 async def entrypoint(ctx: agents.JobContext):
@@ -47,4 +60,6 @@ async def entrypoint(ctx: agents.JobContext):
 
 
 if __name__ == "__main__":
-    agents.cli.run_app(agents.WorkerOptions(entrypoint_fnc=entrypoint))
+    agents.cli.run_app(
+        agents.WorkerOptions(entrypoint_fnc=entrypoint)
+    )
