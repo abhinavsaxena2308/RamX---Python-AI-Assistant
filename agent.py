@@ -20,6 +20,8 @@ from get_open_app import open_app, assistant_command_listener
 load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
+logging.basicConfig(level=logging.INFO)
+
 
 class Assistant(Agent):
     def __init__(self, chat_ctx=None) -> None:
@@ -29,7 +31,7 @@ class Assistant(Agent):
                 api_key=GOOGLE_API_KEY,
                 model="gemini-2.0-flash-exp",
                 voice="Charon",
-                temperature=0.8,
+                temperature=1,
             ),
             tools=[
                 get_current_weather,
@@ -72,18 +74,28 @@ async def entrypoint(ctx: agents.JobContext):
             if memory_str and memory_str in content_str:
                 continue
 
+            # Only consider user/assistant messages
             if hasattr(item, "role") and item.role in ["user", "assistant"]:
-                # Normal conversation log
-                conversation_memories.append(f"{item.role}: {content_str.strip()}")
+                # Append as dict with role + content for Mem0
+                conversation_memories.append(
+                    {"role": item.role, "content": content_str.strip()}
+                )
 
                 # Extract preferences from user messages
                 if item.role == "user" and any(
                     kw in content_str.lower()
                     for kw in ["like", "love", "prefer", "enjoy", "hate", "dislike"]
                 ):
-                    preference_memories.append(content_str.strip())
+                    preference_memories.append({"content": content_str.strip()})
 
-        # Save organized memories
+        # Print conversation to console
+        if conversation_memories:
+            print("\n=== Conversation log ===")
+            for msg in conversation_memories:
+                print(f"{msg['role']}: {msg['content']}")
+            print("========================\n")
+
+        # Save organized memories in correct Mem0 format
         if conversation_memories:
             await mem0.add(
                 conversation_memories, user_id="RamX", category="conversation"
@@ -95,15 +107,13 @@ async def entrypoint(ctx: agents.JobContext):
             logging.info("Preferences saved in mem0.")
 
     session = AgentSession()
-
     mem0 = AsyncMemoryClient()
     user_name = "RamX"
     initial_ctx = ChatContext()
     memory_str = ""
 
-    # Restore only preferences (cleaner context)
+    # Restore only preferences for cleaner context
     results = await mem0.get_all(user_id=user_name, category="preferences")
-
     if results:
         memories = [result["memory"] for result in results]
         memory_str = json.dumps(memories, indent=2)
@@ -113,6 +123,7 @@ async def entrypoint(ctx: agents.JobContext):
             content=f"Here are known facts about the user {user_name}: {memory_str}",
         )
 
+    # Start the agent session
     await session.start(
         room=ctx.room,
         agent=Assistant(chat_ctx=initial_ctx),
@@ -123,8 +134,10 @@ async def entrypoint(ctx: agents.JobContext):
 
     await ctx.connect()
 
+    # Generate initial reply
     await session.generate_reply(instructions=SESSION_INSTRUCTION)
 
+    # Register shutdown hook
     ctx.add_shutdown_callback(
         lambda: shutdown_hook(session._agent.chat_ctx, mem0, memory_str)
     )

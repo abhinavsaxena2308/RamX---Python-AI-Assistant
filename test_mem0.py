@@ -5,22 +5,22 @@ import json
 
 
 load_dotenv()
-user_name = 'David'
+user_name = 'RamX'
 mem0 = MemoryClient()
 
 def add_memory():
     
     messages_formatted = [
         {        "role": "user",
-            "content": "I really like Linkin Park."
+            "content": "i have an interview."
         },
         {
             "role": "assistant",
-            "content": "That is a good choice."
+            "content": "which interview? shall i help you with some tips?."
         },
         {
             "role": "user",
-            "content": "I think so too."
+            "content": "yes please."
         },
         {
             "role": "assistant",
@@ -28,7 +28,7 @@ def add_memory():
         },
     ]
 
-    mem0.add(messages_formatted, user_id="David")
+    mem0.add(messages_formatted, user_id="RamX")
 
 def get_memory_by_query():
     mem0 = MemoryClient()
@@ -49,4 +49,4 @@ def get_memory_by_query():
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    get_memory_by_query()
+    add_memory()

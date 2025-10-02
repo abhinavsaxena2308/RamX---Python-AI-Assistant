@@ -1,6 +1,7 @@
 import sqlite3
 import subprocess
 import os
+import asyncio
 from typing import Optional
 from functools import wraps
 from livekit.agents import function_tool
@@ -29,7 +30,6 @@ def get_app_path(app_name: str) -> Optional[str]:
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-   
     cursor.execute("SELECT path FROM sys_command WHERE name = ?", (app_name,))
     result = cursor.fetchone()
     if result:
@@ -46,7 +46,7 @@ def get_app_path(app_name: str) -> Optional[str]:
 
 
 @function_tool()
-def open_app(app_name: str) -> str:
+async def open_app(app_name: str) -> str:
     """
     Opens the app using the path in RamX.db.
     Returns a status message.
@@ -59,12 +59,17 @@ def open_app(app_name: str) -> str:
         return f"[ERROR] Path '{path}' does not exist."
 
     try:
-        subprocess.Popen(path, shell=True)
+        # Run in a background thread to avoid blocking
+        def launch():
+            subprocess.Popen(path, shell=True)
+
+        await asyncio.to_thread(launch)
         return f"[INFO] Opening '{app_name}'..."
     except Exception as e:
         return f"[ERROR] Failed to open '{app_name}': {e}"
 
-@function_tool
+
+@function_tool()
 async def assistant_command_listener(command: str) -> str:
     """
     Parses the user command and calls the appropriate tool.
@@ -72,11 +77,9 @@ async def assistant_command_listener(command: str) -> str:
     """
     command = command.strip().lower()
     if command.startswith("open "):
-        # Extract app name
         app_name = command.replace("open ", "").strip()
-        # Call the registered tool
         if "open_app" in TOOLS:
-            return TOOLS["open_app"](app_name)
+            return await TOOLS["open_app"](app_name)
         else:
             return "[ERROR] No tool registered to open apps."
     else:
@@ -84,10 +87,15 @@ async def assistant_command_listener(command: str) -> str:
 
 
 if __name__ == "__main__":
-    while True:
-        user_input = input("You: ").strip()
-        if user_input.lower() in ["exit", "quit"]:
-            print("Exiting assistant...")
-            break
-        response = assistant_command_listener(user_input)
-        print(response)
+    import asyncio
+
+    async def main():
+        while True:
+            user_input = input("You: ").strip()
+            if user_input.lower() in ["exit", "quit"]:
+                print("Exiting assistant...")
+                break
+            response = await assistant_command_listener(user_input)
+            print(response)
+
+    asyncio.run(main())
