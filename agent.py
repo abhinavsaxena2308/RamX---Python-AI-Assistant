@@ -1,5 +1,5 @@
 from dotenv import load_dotenv
-from livekit import agents
+from livekit import agents, rtc
 from livekit.agents import AgentSession, Agent, RoomInputOptions, ChatContext
 from livekit.plugins import google, noise_cancellation
 import os
@@ -16,6 +16,17 @@ from get_spotify import spotify_control
 from get_news import fetch_news
 from youtube_music_control import youtube_music_control
 from get_open_app import open_app, assistant_command_listener
+
+# ----------- NEW IMPORTS for GUI -----------
+import sys
+import numpy as np
+import pyaudio
+import threading
+from queue import Queue
+from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout
+from PyQt5.QtCore import QTimer
+import pyqtgraph as pg
+# -------------------------------------------
 
 load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -44,6 +55,68 @@ class Assistant(Agent):
             ],
             chat_ctx=chat_ctx,
         )
+
+
+# ----------- NEW CLASS: Waveform Visualizer -----------
+class LiveVoiceVisualizer(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("AI Voice Waveform")
+        self.setGeometry(200, 200, 600, 300)
+
+        layout = QVBoxLayout()
+        self.setLayout(layout)
+
+        # PyQtGraph plot widget
+        self.plot_widget = pg.PlotWidget()
+        layout.addWidget(self.plot_widget)
+        self.plot_data = self.plot_widget.plot(pen="g")
+
+        self.plot_widget.setYRange(-30000, 30000)
+        self.plot_widget.showGrid(x=True, y=True)
+
+        # Audio queue
+        self.audio_queue = Queue()
+
+        # PyAudio setup
+        self.p = pyaudio.PyAudio()
+        self.stream = self.p.open(format=pyaudio.paInt16,
+                                  channels=1,
+                                  rate=16000,
+                                  output=True)
+
+        # Timer for waveform updates
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_waveform)
+        self.timer.start(30)
+
+        # Keep rolling buffer of last samples
+        self.buffer = np.zeros(16000)
+
+    def update_waveform(self):
+        if not self.audio_queue.empty():
+            data = self.audio_queue.get()
+            self.stream.write(data)
+
+            audio_np = np.frombuffer(data, dtype=np.int16)
+
+            # Append to buffer and keep size fixed
+            self.buffer = np.roll(self.buffer, -len(audio_np))
+            self.buffer[-len(audio_np):] = audio_np
+
+            self.plot_data.setData(self.buffer)
+
+    def add_audio_chunk(self, chunk: bytes):
+        """Feed audio from LiveKit track"""
+        self.audio_queue.put(chunk)
+
+    def closeEvent(self, event):
+        self.timer.stop()
+        self.stream.stop_stream()
+        self.stream.close()
+        self.p.terminate()
+        event.accept()
+# ------------------------------------------------------
 
 
 async def entrypoint(ctx: agents.JobContext):
@@ -113,6 +186,13 @@ async def entrypoint(ctx: agents.JobContext):
             content=f"Here are known facts about the user {user_name}: {memory_str}",
         )
 
+    # ----------- START GUI in a background thread -----------
+    app = QApplication(sys.argv)
+    gui = LiveVoiceVisualizer()
+    gui.show()
+    threading.Thread(target=lambda: app.exec_(), daemon=True).start()
+    # --------------------------------------------------------
+
     await session.start(
         room=ctx.room,
         agent=Assistant(chat_ctx=initial_ctx),
@@ -122,6 +202,14 @@ async def entrypoint(ctx: agents.JobContext):
     )
 
     await ctx.connect()
+
+    # ----------- Hook AI audio to visualizer -----------
+    @session.on("track_subscribed")
+    async def on_track(track, pub, participant):
+        if track.kind == "audio":
+            async for frame in track:
+                gui.add_audio_chunk(frame.data)
+    # --------------------------------------------------
 
     await session.generate_reply(instructions=SESSION_INSTRUCTION)
 

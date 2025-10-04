@@ -10,3 +10,6 @@ requests
 python-dotenv
 pyautogui
 ddgs
+pyqtgraph
+PyQt5
+pyaudio
