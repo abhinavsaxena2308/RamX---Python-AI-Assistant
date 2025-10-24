@@ -1,6 +1,4 @@
 livekit-agents
-livekit-plugins-openai
-livekit-plugins-silero
 livekit-plugins-google
 livekit-plugins-noise-cancellation
 mem0ai
@@ -10,6 +8,3 @@ requests
 python-dotenv
 pyautogui
 ddgs
-pyqtgraph
-PyQt5
-pyaudio

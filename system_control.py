@@ -10,6 +10,7 @@ async def system_control(command: str) -> str:
     import time
     import pyautogui
     import os
+    import webbrowser
 
     try:
         command = command.lower()
@@ -36,6 +37,4 @@ async def system_control(command: str) -> str:
 
     except Exception as e:
         return f"An error occurred while executing the command: {e}"
-import logging
-from livekit.agents import function_tool
 

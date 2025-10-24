@@ -5,7 +5,7 @@ from typing import Optional
 from functools import wraps
 from livekit.agents import function_tool
 
-DB_PATH = "RamX.db"  
+DB_PATH = "Ramx.db"  
 TOOLS = {}  
 
 def tool(name: str):
@@ -55,6 +55,16 @@ def open_app(app_name: str) -> str:
     if not path:
         return f"[ERROR] App '{app_name}' not found in database."
 
+    # If the stored path is a URL (from web_command), open in default browser
+    if path.lower().startswith(("http://", "https://")):
+        try:
+            import webbrowser
+            webbrowser.open(path)
+            return f"[INFO] Opening '{app_name}' in browser: {path}"
+        except Exception as e:
+            return f"[ERROR] Failed to open URL '{path}': {e}"
+
+    # Otherwise treat as local application path (from sys_command)
     if not os.path.exists(path):
         return f"[ERROR] Path '{path}' does not exist."
 
@@ -74,9 +84,8 @@ async def assistant_command_listener(command: str) -> str:
     if command.startswith("open "):
         # Extract app name
         app_name = command.replace("open ", "").strip()
-        # Call the registered tool
         if "open_app" in TOOLS:
-            return TOOLS["open_app"](app_name)
+            return await TOOLS["open_app"](app_name)
         else:
             return "[ERROR] No tool registered to open apps."
     else:

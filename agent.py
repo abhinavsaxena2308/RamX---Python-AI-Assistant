@@ -3,9 +3,13 @@ from livekit import agents, rtc
 from livekit.agents import AgentSession, Agent, RoomInputOptions, ChatContext
 from livekit.plugins import google, noise_cancellation
 import os
+import sys
+import subprocess
+import asyncio
 from mem0 import AsyncMemoryClient
 import logging
 import json
+import httpx
 
 from get_weather import get_current_weather
 from get_current_time_date import get_current_date_time
@@ -16,17 +20,6 @@ from get_spotify import spotify_control
 from get_news import fetch_news
 from youtube_music_control import youtube_music_control
 from get_open_app import open_app, assistant_command_listener
-
-# ----------- NEW IMPORTS for GUI -----------
-import sys
-import numpy as np
-import pyaudio
-import threading
-from queue import Queue
-from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout
-from PyQt5.QtCore import QTimer
-import pyqtgraph as pg
-# -------------------------------------------
 
 load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -50,8 +43,9 @@ class Assistant(Agent):
                 spotify_control,
                 fetch_news,
                 youtube_music_control,
-                open_app,
-                assistant_command_listener,
+                open_application,
+                assistant_open_command,
+                set_avatar_expression,
             ],
             chat_ctx=chat_ctx,
         )
@@ -121,9 +115,21 @@ class LiveVoiceVisualizer(QWidget):
 
 async def entrypoint(ctx: agents.JobContext):
     async def shutdown_hook(
-        chat_ctx: ChatContext, mem0: AsyncMemoryClient, memory_str: str
+        chat_ctx: ChatContext, mem0: AsyncMemoryClient, memory_str: str, avatar_proc: subprocess.Popen | None, expr_task: asyncio.Task | None
     ):
         logging.info("Shutting down the agent session...")
+        # Stop desktop avatar process if started
+        try:
+            if avatar_proc and avatar_proc.poll() is None:
+                avatar_proc.terminate()
+        except Exception as e:
+            logging.warning(f"Failed to terminate desktop avatar: {e}")
+        # Cancel expression watcher
+        try:
+            if expr_task and not expr_task.done():
+                expr_task.cancel()
+        except Exception:
+            pass
 
         conversation_memories = []
         preference_memories = []
@@ -156,27 +162,37 @@ async def entrypoint(ctx: agents.JobContext):
                 ):
                     preference_memories.append(content_str.strip())
 
-        # Save organized memories
+        # Print conversation to console
+        if conversation_memories:
+            print("\n=== Conversation log ===")
+            for msg in conversation_memories:
+                print(f"{msg['role']}: {msg['content']}")
+            print("========================\n")
+
+        # Save organized memories in correct Mem0 format
         if conversation_memories:
             await mem0.add(
                 conversation_memories, user_id="RamX", category="conversation"
             )
             logging.info("Conversation saved in mem0.")
 
-        if preference_memories:
-            await mem0.add(preference_memories, user_id="RamX", category="preferences")
-            logging.info("Preferences saved in mem0.")
+            if preference_memories:
+                try:
+                    await mem0.add(
+                        preference_memories, user_id="RamX", category="preferences"
+                    )
+                    logging.info("Preferences saved in mem0.")
+                except (httpx.HTTPError, Exception) as e:
+                    logging.warning(f"Mem0 add preferences failed: {e}")
 
     session = AgentSession()
-
     mem0 = AsyncMemoryClient()
     user_name = "RamX"
     initial_ctx = ChatContext()
     memory_str = ""
 
-    # Restore only preferences (cleaner context)
+    # Restore only preferences for cleaner context
     results = await mem0.get_all(user_id=user_name, category="preferences")
-
     if results:
         memories = [result["memory"] for result in results]
         memory_str = json.dumps(memories, indent=2)
@@ -186,13 +202,7 @@ async def entrypoint(ctx: agents.JobContext):
             content=f"Here are known facts about the user {user_name}: {memory_str}",
         )
 
-    # ----------- START GUI in a background thread -----------
-    app = QApplication(sys.argv)
-    gui = LiveVoiceVisualizer()
-    gui.show()
-    threading.Thread(target=lambda: app.exec_(), daemon=True).start()
-    # --------------------------------------------------------
-
+    # Start the agent session
     await session.start(
         room=ctx.room,
         agent=Assistant(chat_ctx=initial_ctx),
@@ -213,8 +223,55 @@ async def entrypoint(ctx: agents.JobContext):
 
     await session.generate_reply(instructions=SESSION_INSTRUCTION)
 
+    # Start background watcher to trigger avatar expressions from assistant messages
+    async def _expression_watcher(chat_ctx: ChatContext):
+        last_idx = 0
+        while True:
+            try:
+                items = list(chat_ctx.items)
+                if last_idx < len(items):
+                    new_items = items[last_idx:]
+                    last_idx = len(items)
+                    for it in new_items:
+                        try:
+                            role = getattr(it, "role", None)
+                            if role not in ("assistant", "user"):
+                                continue
+                            content = getattr(it, "content", "")
+                            if isinstance(content, list):
+                                text = "".join(map(str, content))
+                            else:
+                                text = str(content)
+                            low = text.lower()
+                            # Map keywords to expressions
+                            expr = None
+                            dur = 1.2
+                            if any(k in low for k in ["winking face", "wink", "😉"]):
+                                expr = "wink"
+                                dur = 1.2
+                            elif any(k in low for k in ["open mouth smile", "big smile", "😀", "😃", "grin"]):
+                                expr = "smile_open"
+                                dur = 1.5
+                            elif any(k in low for k in ["neutral face", "back to normal", "neutral"]):
+                                expr = "neutral"
+                                dur = 0.6
+                            if expr:
+                                try:
+                                    await set_avatar_expression(expr=expr, duration=dur)
+                                except Exception as e:
+                                    logging.warning(f"set_avatar_expression failed: {e}")
+                        except Exception:
+                            pass
+                await asyncio.sleep(0.25)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                await asyncio.sleep(0.5)
+
+    expr_task = asyncio.create_task(_expression_watcher(session._agent.chat_ctx))
+
     ctx.add_shutdown_callback(
-        lambda: shutdown_hook(session._agent.chat_ctx, mem0, memory_str)
+        lambda: shutdown_hook(session._agent.chat_ctx, mem0, memory_str, avatar_proc, expr_task)
     )
 
 
