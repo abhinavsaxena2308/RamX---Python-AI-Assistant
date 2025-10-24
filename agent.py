@@ -19,7 +19,8 @@ from system_control import system_control
 from get_spotify import spotify_control
 from get_news import fetch_news
 from youtube_music_control import youtube_music_control
-from get_open_app import open_app, assistant_command_listener
+from open_application import open_application, assistant_open_command
+from set_avatar_expression import set_avatar_expression
 
 load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -49,69 +50,6 @@ class Assistant(Agent):
             ],
             chat_ctx=chat_ctx,
         )
-
-
-# ----------- NEW CLASS: Waveform Visualizer -----------
-class LiveVoiceVisualizer(QWidget):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("AI Voice Waveform")
-        self.setGeometry(200, 200, 600, 300)
-
-        layout = QVBoxLayout()
-        self.setLayout(layout)
-
-        # PyQtGraph plot widget
-        self.plot_widget = pg.PlotWidget()
-        layout.addWidget(self.plot_widget)
-        self.plot_data = self.plot_widget.plot(pen="g")
-
-        self.plot_widget.setYRange(-30000, 30000)
-        self.plot_widget.showGrid(x=True, y=True)
-
-        # Audio queue
-        self.audio_queue = Queue()
-
-        # PyAudio setup
-        self.p = pyaudio.PyAudio()
-        self.stream = self.p.open(format=pyaudio.paInt16,
-                                  channels=1,
-                                  rate=16000,
-                                  output=True)
-
-        # Timer for waveform updates
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_waveform)
-        self.timer.start(30)
-
-        # Keep rolling buffer of last samples
-        self.buffer = np.zeros(16000)
-
-    def update_waveform(self):
-        if not self.audio_queue.empty():
-            data = self.audio_queue.get()
-            self.stream.write(data)
-
-            audio_np = np.frombuffer(data, dtype=np.int16)
-
-            # Append to buffer and keep size fixed
-            self.buffer = np.roll(self.buffer, -len(audio_np))
-            self.buffer[-len(audio_np):] = audio_np
-
-            self.plot_data.setData(self.buffer)
-
-    def add_audio_chunk(self, chunk: bytes):
-        """Feed audio from LiveKit track"""
-        self.audio_queue.put(chunk)
-
-    def closeEvent(self, event):
-        self.timer.stop()
-        self.stream.stop_stream()
-        self.stream.close()
-        self.p.terminate()
-        event.accept()
-# ------------------------------------------------------
-
 
 async def entrypoint(ctx: agents.JobContext):
     async def shutdown_hook(
@@ -166,7 +104,7 @@ async def entrypoint(ctx: agents.JobContext):
         if conversation_memories:
             print("\n=== Conversation log ===")
             for msg in conversation_memories:
-                print(f"{msg['role']}: {msg['content']}")
+                print(msg)
             print("========================\n")
 
         # Save organized memories in correct Mem0 format
@@ -186,13 +124,24 @@ async def entrypoint(ctx: agents.JobContext):
                     logging.warning(f"Mem0 add preferences failed: {e}")
 
     session = AgentSession()
-    mem0 = AsyncMemoryClient()
+    # Initialize Mem0 client with API key if available
+    try:
+        mem0_api_key = os.getenv("MEM0_API_KEY")
+        mem0 = AsyncMemoryClient(api_key=mem0_api_key) if mem0_api_key else AsyncMemoryClient()
+    except Exception as e:
+        logging.warning(f"Mem0 client init failed, continuing without it: {e}")
+        mem0 = None
     user_name = "RamX"
     initial_ctx = ChatContext()
     memory_str = ""
 
     # Restore only preferences for cleaner context
-    results = await mem0.get_all(user_id=user_name, category="preferences")
+    results = []
+    if mem0 is not None:
+        try:
+            results = await mem0.get_all(user_id=user_name, category="preferences")
+        except Exception as e:
+            logging.warning(f"Mem0 get_all failed, skipping preferences load: {e}")
     if results:
         memories = [result["memory"] for result in results]
         memory_str = json.dumps(memories, indent=2)
@@ -212,14 +161,14 @@ async def entrypoint(ctx: agents.JobContext):
     )
 
     await ctx.connect()
-
-    # ----------- Hook AI audio to visualizer -----------
-    @session.on("track_subscribed")
-    async def on_track(track, pub, participant):
-        if track.kind == "audio":
-            async for frame in track:
-                gui.add_audio_chunk(frame.data)
-    # --------------------------------------------------
+    # Start desktop avatar UI
+    avatar_proc = None
+    try:
+        avatar_path = os.path.join(os.path.dirname(__file__), "avatar", "desktop_avatar.py")
+        avatar_proc = subprocess.Popen([sys.executable, "-u", avatar_path])
+        logging.info("Desktop avatar started")
+    except Exception as e:
+        logging.warning(f"Failed to start desktop avatar: {e}")
 
     await session.generate_reply(instructions=SESSION_INSTRUCTION)
 
