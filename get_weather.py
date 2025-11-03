@@ -1,9 +1,6 @@
 import logging
 from livekit.agents import function_tool, RunContext
 import requests
-import os
-
-WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
 
 @function_tool()
 async def get_current_weather(

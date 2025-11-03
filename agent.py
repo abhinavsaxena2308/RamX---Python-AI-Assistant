@@ -19,7 +19,7 @@ from system_control import system_control
 from get_spotify import spotify_control
 from get_news import fetch_news
 from youtube_music_control import youtube_music_control
-from open_application import open_application, assistant_open_command
+from open_application import open_application, assistant_open_command, close_application
 from set_avatar_expression import set_avatar_expression
 
 load_dotenv()
@@ -45,6 +45,7 @@ class Assistant(Agent):
                 fetch_news,
                 youtube_music_control,
                 open_application,
+                close_application,
                 assistant_open_command,
                 set_avatar_expression,
             ],
@@ -184,14 +185,21 @@ async def entrypoint(ctx: agents.JobContext):
                     for it in new_items:
                         try:
                             role = getattr(it, "role", None)
-                            if role not in ("assistant", "user"):
+                            # Only watch assistant messages for expressions
+                            if role != "assistant":
                                 continue
                             content = getattr(it, "content", "")
                             if isinstance(content, list):
                                 text = "".join(map(str, content))
                             else:
                                 text = str(content)
+                            
+                            if not text or not text.strip():
+                                continue
+                                
                             low = text.lower()
+                            logging.info(f"[Expression Watcher] Checking: {text[:100]}...")
+                            
                             # Map keywords to expressions
                             expr = None
                             dur = 1.2
@@ -201,17 +209,43 @@ async def entrypoint(ctx: agents.JobContext):
                             elif any(k in low for k in ["open mouth smile", "big smile", "😀", "😃", "grin"]):
                                 expr = "smile_open"
                                 dur = 1.5
+                            elif any(k in low for k in ["cool", "sunglasses", "😎", "shades"]):
+                                expr = "cool"
+                                dur = 1.5
+                            elif any(k in low for k in ["happy", "joy", "joyful", "😊", "😄", "excited", "tears of joy", "awesome"]):
+                                expr = "happy"
+                                dur = 1.5
+                            elif any(k in low for k in ["sad", "crying", "😢", "😭", "unhappy"]):
+                                expr = "sad"
+                                dur = 2.0
+                            elif any(k in low for k in ["surprised", "shock", "😲", "😮", "amazed", "wow"]):
+                                expr = "surprised"
+                                dur = 1.3
+                            elif any(k in low for k in ["angry", "mad", "😠", "😡", "furious"]):
+                                expr = "angry"
+                                dur = 1.8
+                            elif any(k in low for k in ["sleepy", "tired", "😴", "yawn", "drowsy"]):
+                                expr = "sleepy"
+                                dur = 2.5
+                            elif any(k in low for k in ["thinking", "hmm", "🤔", "pondering", "let me think"]):
+                                expr = "thinking"
+                                dur = 2.0
+                            elif any(k in low for k in ["love", "heart", "😍", "❤️", "💕", "adore"]):
+                                expr = "love"
+                                dur = 2.0
                             elif any(k in low for k in ["neutral face", "back to normal", "neutral"]):
                                 expr = "neutral"
                                 dur = 0.6
                             if expr:
+                                logging.info(f"[Expression Watcher] Detected '{expr}' expression, triggering for {dur}s")
                                 try:
-                                    await set_avatar_expression(expr=expr, duration=dur)
+                                    result = await set_avatar_expression(expr=expr, duration=dur)
+                                    logging.info(f"[Expression Watcher] Result: {result}")
                                 except Exception as e:
-                                    logging.warning(f"set_avatar_expression failed: {e}")
+                                    logging.warning(f"[Expression Watcher] set_avatar_expression failed: {e}")
                         except Exception:
                             pass
-                await asyncio.sleep(0.25)
+                await asyncio.sleep(0.1)  # Check every 100ms for faster response
             except asyncio.CancelledError:
                 break
             except Exception:

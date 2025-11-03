@@ -1,5 +1,6 @@
 import time
 import subprocess
+import os
 from typing import Optional
 import pyautogui
 from livekit.agents import function_tool
@@ -26,6 +27,30 @@ FALLBACK_CMDS = {
     "excel": ["cmd", "/c", "start", "", "excel"],
     "powerpoint": ["cmd", "/c", "start", "", "powerpnt"],
     "paint": ["cmd", "/c", "start", "", "mspaint"],
+    "telegram": ["cmd", "/c", "start", "", "telegram"],
+}
+
+# Process names for closing applications
+APP_PROCESS_NAMES = {
+    "chrome": "chrome.exe",
+    "google chrome": "chrome.exe",
+    "edge": "msedge.exe",
+    "microsoft edge": "msedge.exe",
+    "notepad": "notepad.exe",
+    "calculator": "CalculatorApp.exe",
+    "calc": "CalculatorApp.exe",
+    "word": "WINWORD.EXE",
+    "excel": "EXCEL.EXE",
+    "powerpoint": "POWERPNT.EXE",
+    "paint": "mspaint.exe",
+    "notepad++": "notepad++.exe",
+    "spotify": "Spotify.exe",
+    "discord": "Discord.exe",
+    "vscode": "Code.exe",
+    "visual studio code": "Code.exe",
+    "file explorer": "explorer.exe",
+    "explorer": "explorer.exe",
+    "telegram": "Telegram.exe",
 }
 
 
@@ -62,7 +87,7 @@ def _fallback_known_apps(app_name: str) -> bool:
 
 
 @function_tool()
-def open_application(app_name: str) -> str:
+async def open_application(app_name: str) -> str:
     """
     Opens a Windows application using the Start Menu typing approach.
     If the app can't be opened, returns an apologetic verbal message.
@@ -90,22 +115,88 @@ def open_application(app_name: str) -> str:
 
 
 @function_tool()
-def assistant_open_command(command: str) -> str:
+async def close_application(app_name: str) -> str:
     """
-    Detects phrases like "open <app>" and triggers open_application.
+    Closes a Windows application by terminating its process.
+    Returns a verbal confirmation or error message.
+    """
+    if not app_name or not app_name.strip():
+        return _speak_ack("Please specify an app to close.")
+
+    norm = _normalize(app_name)
+    key = norm.strip().lower()
+    
+    # Get the process name for the app
+    process_name = APP_PROCESS_NAMES.get(key)
+    
+    if not process_name:
+        # Try using the normalized name with .exe extension
+        process_name = f"{norm}.exe"
+    
+    print(f"[Assistant]: Trying to close {norm} (process: {process_name})")
+    
+    try:
+        # First check if the process is running
+        check_cmd = f'tasklist /FI "IMAGENAME eq {process_name}" 2>NUL | find /I /N "{process_name}"'
+        check_result = subprocess.run(check_cmd, shell=True, capture_output=True, text=True)
+        
+        if process_name.lower() not in check_result.stdout.lower():
+            return _speak_ack(f"{norm} is not currently running.")
+        
+        # Use taskkill command to close the application
+        kill_cmd = ["taskkill", "/F", "/IM", process_name]
+        result = subprocess.run(kill_cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            return _speak_ack(f"Closed {norm}.")
+        else:
+            # Try alternative process names for some apps
+            if key in ["calculator", "calc"]:
+                # Try both Calculator.exe and CalculatorApp.exe
+                for alt_name in ["Calculator.exe", "CalculatorApp.exe", "win32calc.exe"]:
+                    try:
+                        alt_result = subprocess.run(["taskkill", "/F", "/IM", alt_name], 
+                                                   capture_output=True, text=True)
+                        if alt_result.returncode == 0:
+                            return _speak_ack(f"Closed {norm}.")
+                    except Exception:
+                        continue
+            
+            return _speak_ack(f"Could not close {norm}. It may not be running.")
+    except Exception as e:
+        print(f"[Error closing {norm}]: {str(e)}")
+        return _speak_ack(f"Failed to close {norm}.")
+
+
+@function_tool()
+async def assistant_open_command(command: str) -> str:
+    """
+    Detects phrases like "open <app>" or "close <app>" and triggers the appropriate function.
     Returns a user-facing verbal response string.
     """
     if not command:
         return ""
     text = command.strip()
     lower = text.lower()
+    
+    # Check for close command
+    if "close" in lower:
+        try:
+            idx = lower.index("close")
+            candidate = text[idx + len("close"):].strip().strip('"\' ')
+            if candidate:
+                return await close_application(candidate)
+        except Exception:
+            pass
+    
+    # Check for open command
     if "open" in lower:
-        # extract best-effort app name after the first occurrence of 'open'
         try:
             idx = lower.index("open")
             candidate = text[idx + len("open"):].strip().strip('"\' ')
             if candidate:
-                return open_application(candidate)
+                return await open_application(candidate)
         except Exception:
             pass
+    
     return ""

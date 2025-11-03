@@ -8,3 +8,7 @@ requests
 python-dotenv
 pyautogui
 ddgs
+pycaw
+comtypes
+PySide6
+spotipy

@@ -13,10 +13,26 @@ def _normalize(expr: str) -> str:
         return "wink"
     if any(k in e for k in ["smile open", "open mouth smile", "big smile", "😀", "😃", "open smile"]):
         return "smile_open"
+    if any(k in e for k in ["cool", "sunglasses", "😎", "shades"]):
+        return "cool"
+    if any(k in e for k in ["happy", "joy", "joyful", "😊", "😄", "excited", "tears of joy", "awesome"]):
+        return "happy"
+    if any(k in e for k in ["sad", "crying", "😢", "😭", "unhappy", "down"]):
+        return "sad"
+    if any(k in e for k in ["surprised", "shock", "😲", "😮", "amazed", "wow"]):
+        return "surprised"
+    if any(k in e for k in ["angry", "mad", "😠", "😡", "furious", "annoyed"]):
+        return "angry"
+    if any(k in e for k in ["sleepy", "tired", "😴", "yawn", "drowsy"]):
+        return "sleepy"
+    if any(k in e for k in ["thinking", "hmm", "🤔", "pondering", "wondering"]):
+        return "thinking"
+    if any(k in e for k in ["love", "heart", "😍", "❤️", "💕", "adore"]):
+        return "love"
     if e in {"neutral", "reset", "rest"}:
         return "neutral"
     # Fallback: pass through if it matches known ones
-    if e in {"wink", "smile_open", "neutral"}:
+    if e in {"wink", "smile_open", "neutral", "cool", "happy", "sad", "surprised", "angry", "sleepy", "thinking", "love"}:
         return e
     return "neutral"
 
@@ -25,7 +41,7 @@ def _normalize(expr: str) -> str:
 async def set_avatar_expression(expr: str, duration: float = 1.2) -> str:
     """
     Show an expression on the desktop avatar (PySide6 window).
-    Expressions: wink, smile_open, neutral
+    Expressions: wink, smile_open, cool, happy, sad, surprised, angry, sleepy, thinking, love, neutral
     The avatar app must be running: python -m avatar.desktop_avatar
     """
     canon = _normalize(expr)
