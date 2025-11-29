@@ -1,6 +1,6 @@
 from livekit.agents import function_tool, RunContext
 
-@function_tool
+@function_tool()
 async def youtube_music_control(
     context: RunContext,
     track_name: str,

@@ -1,6 +1,6 @@
 from livekit.agents import function_tool, RunContext
 
-@function_tool
+@function_tool()
 async def spotify_control(
     context: RunContext,
     action: str,
