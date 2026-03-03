@@ -21,7 +21,6 @@ from get_spotify import spotify_control
 from get_news import fetch_news
 from youtube_music_control import youtube_music_control
 from open_application import open_application, assistant_open_command, close_application, list_running_applications, assistant_list_command
-from set_avatar_expression import set_avatar_expression
 
 load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY") or NOT_GIVEN
@@ -55,7 +54,6 @@ class Assistant(Agent):
                 close_application,
                 list_running_applications,
                 assistant_list_command,
-                set_avatar_expression,
             ],
             chat_ctx=chat_ctx,
         )
@@ -66,23 +64,9 @@ async def entrypoint(ctx: agents.JobContext):
     async def shutdown_hook(
         chat_ctx: "ChatContext", 
         mem0: "Optional[AsyncMemoryClient]", 
-        memory_str: str, 
-        avatar_proc: "Optional[subprocess.Popen]", 
-        expr_task: "Optional[asyncio.Task]"
+        memory_str: str
     ):
         logging.info("Shutting down the agent session...")
-        # Stop desktop avatar process if started
-        try:
-            if avatar_proc and avatar_proc.poll() is None:
-                avatar_proc.terminate()
-        except Exception as e:
-            logging.warning(f"Failed to terminate desktop avatar: {e}")
-        # Cancel expression watcher
-        try:
-            if expr_task and not expr_task.done():
-                expr_task.cancel()
-        except Exception:
-            pass
 
         conversation_memories = []
         preference_memories = []
@@ -153,8 +137,6 @@ async def entrypoint(ctx: agents.JobContext):
     user_name = "RamX"
     initial_ctx = ChatContext()
     memory_str = ""
-    avatar_proc = None
-    expr_task = None
     agent_chat_ctx = None
 
     try:
@@ -193,88 +175,17 @@ async def entrypoint(ctx: agents.JobContext):
 
         await ctx.connect()
         
-        # Start desktop avatar UI
-        try:
-            avatar_path = os.path.join(os.path.dirname(__file__), "avatar", "desktop_avatar.py")
-            avatar_proc = subprocess.Popen([sys.executable, "-u", avatar_path])
-            logging.info("Desktop avatar started")
-        except Exception as e:
-            logging.warning(f"Failed to start desktop avatar: {e}")
-
         await session.generate_reply(instructions=SESSION_INSTRUCTION)
-
-        # Start background watcher to trigger avatar expressions from assistant messages
-        async def _expression_watcher(chat_ctx: ChatContext):
-            last_idx = 0
-            while True:
-                try:
-                    items = list(chat_ctx.items)
-                    if last_idx < len(items):
-                        new_items = items[last_idx:]
-                        last_idx = len(items)
-                        for it in new_items:
-                            try:
-                                role = getattr(it, "role", None)
-                                if role not in ("assistant", "user"):
-                                    continue
-                                content = getattr(it, "content", "")
-                                if isinstance(content, list):
-                                    text = "".join(map(str, content))
-                                else:
-                                    text = str(content)
-                                low = text.lower()
-                                # Map keywords to expressions
-                                expr = None
-                                dur = 1.2
-                                if any(k in low for k in ["winking face", "wink", "😉"]):
-                                    expr = "wink"
-                                    dur = 1.2
-                                elif any(k in low for k in ["open mouth smile", "big smile", "😀", "😃", "grin"]):
-                                    expr = "smile_open"
-                                    dur = 1.5
-                                elif any(k in low for k in ["neutral face", "back to normal", "neutral"]):
-                                    expr = "neutral"
-                                    dur = 0.6
-                                if expr:
-                                    try:
-                                        await set_avatar_expression(expr=expr, duration=dur)
-                                    except Exception as e:
-                                        logging.warning(f"set_avatar_expression failed: {e}")
-                            except Exception:
-                                pass
-                    await asyncio.sleep(0.5)
-                except asyncio.CancelledError:
-                    break
-                except Exception:
-                    await asyncio.sleep(0.5)
-
-        # Set up expression watcher
-        if session._agent is not None:
-            agent_chat_ctx = getattr(session._agent, 'chat_ctx', None)
-        
-        if agent_chat_ctx is not None:
-            expr_task = asyncio.create_task(_expression_watcher(agent_chat_ctx))
 
         # Proper async shutdown callback wrapper
         async def _shutdown_wrapper():
             final_chat_ctx = agent_chat_ctx if agent_chat_ctx is not None else ChatContext()
-            await shutdown_hook(final_chat_ctx, mem0, memory_str, avatar_proc, expr_task)
+            await shutdown_hook(final_chat_ctx, mem0, memory_str)
         
         ctx.add_shutdown_callback(_shutdown_wrapper)
         
     except Exception as e:
         logging.error(f"Error in entrypoint: {e}")
-        # Clean up resources if there was an error
-        try:
-            if avatar_proc and avatar_proc.poll() is None:
-                avatar_proc.terminate()
-        except Exception:
-            pass
-        try:
-            if expr_task and not expr_task.done():
-                expr_task.cancel()
-        except Exception:
-            pass
         raise
 
 

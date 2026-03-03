@@ -13,5 +13,3 @@ pyautogui
 ddgs
 numpy
 scipy
-PySide6
-pycaw
