@@ -7,12 +7,16 @@ cursor = conn.cursor()
 query = "CREATE TABLE IF NOT EXISTS sys_commmand(id INTEGER PRIMARY KEY, name varchar(255),path varchar(255))"
 cursor.execute(query)
 
+<<<<<<< HEAD
 # Create web_commmand table for web apps
 query = "CREATE TABLE IF NOT EXISTS web_commmand(id INTEGER PRIMARY KEY, name varchar(255),url Varchar(255))"
 cursor.execute(query)
 
 # Insert sample data into web_commmand
 query = "INSERT INTO web_commmand VALUES (null, 'Web Whatsapp','https://web.whatsapp.com/')"
+=======
+query = "INSERT INTO web_command VALUES (null, 'Web Whatsapp','https://web.whatsapp.com/')"
+>>>>>>> master
 cursor.execute(query)
 conn.commit()
 
